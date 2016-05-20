@@ -1,0 +1,119 @@
+\documentclass{article}
+
+\usepackage{fullpage,amsthm,amsmath,amssymb}
+\usepackage{algorithm,algorithmic}
+
+\newcommand{\R}{\mathbb{R}}
+\DeclareMathOperator*{\nnz}{nnz}
+
+\begin{document}
+
+\title{Efficient Implementation of Averaging for Adaptive Online Learning}
+\author{D\'avid P\'al}
+\maketitle
+
+This document describes efficient algorithm for averaging for online linear
+optimization. The update takes $O(\nnz(g_t))$ time where $g_t$ is the gradient
+vector in iteration and $\nnz(g_t)$ is \emph{number of non-zeros} in $g_t$.
+
+We consider algorithms that process gradient vectors $g_1, g_2, \dots$ in
+$\R^d$ in an online fashion and produce iterates $w_1, w_2, \dots$ in $\R^d$.
+The iterate $w_t$ depends only on $g_1, g_2, \dots, g_{t-1}$.  We assume that
+next iterate $w_t$ (or a constant multiple of it) can computed in
+$O(\nnz(g_t))$ time from $g_t$ and internal state of the algorithm.
+
+For stochastic optimization problems, one needs to produce running \emph{average}
+$$
+A_t = \frac{1}{t} \sum_{s=1}^t w_s
+$$
+of the iterates $w_1, w_2, \dots, w_t$. Point of this note to show
+how produce the sequence $A_1, A_2, \dots$ such that the next average $A_t$
+can be computed in amortized $O(\nnz(g_t))$ time.
+
+Let
+$$
+S_t = \sum_{s=1}^t w_s
+$$
+be the sum. Then, $A_t = \frac{1}{t} S_t$.
+
+\section{Assumptions on the algorithm}
+
+We assume that
+$$
+w_{t+1} = \alpha_t \sum_{s=1}^t \beta_s g_s \; .
+$$
+where $\alpha_t$ and $\beta_t > 0$ can be computed in $O(\nnz(g_t))$ time
+from $g_t$ and internal state of the algorithm.  Note that gradient descent
+(AdaGrad) as well as FTRL (SOLO, Pistol, KT) are of this form.
+
+To simplify the treatment, let $h_t = \beta_t g_t$. Then
+$$
+w_{t+1} = \alpha_t \sum_{s=1}^t w_t \; .
+$$
+
+This algorithm cannot explicitly compute $w_t$ in $O(\nnz(g_t))$ time.
+However, it can produce a constant multiple of it in $O(\nnz(g_t))$ time.
+More precisely, instead of working with $w_{t+1}$ we work with pair
+$$
+(\theta_t, \alpha_t)
+$$
+where
+$$
+\theta_t = \sum_{s=1}^t h_s \; .
+$$
+We can think of the pair $(\theta_t, \alpha_t)$ is a representation of $w_t$.
+Clearly, $\theta_t$ can be computed from $\theta_{t-1}$ and $g_t$ in $\nnz(h_t)
+= \nnz(g_t)$ time.
+
+\section{Updating $S_{t+1}$ in amortized $O(\nnz(g_t))$ time}
+
+We now show how to update $S_{t+1} = \sum_{s=1}^{t+1} w_s$ in amortized
+$O(\nnz(g_t))$.
+
+The basic idea is to postpone the updates and have a cache of size $O(d)$ to
+store the updates of individual coordinates of $h_{s,i}$. When the cache gets
+full, we realize the updates.
+
+We remember $S_\tau$ and $w_\tau$ for some $\tau \le t$ and the index $\tau$. We can think of
+the variables $S_\tau$ and $w_\tau$ are the ``latest versions''. The cache is simply
+an array containing tuples $(s,i,h_{s,i},\alpha_s)$ for all non-zero coordinates
+of $h_{s,i}$ for time steps $s > \tau$ that are not yet reflected in $S_\tau$ and $w_\tau$.
+We need support two operations on the cache:
+\begin{itemize}
+\item Append non-zero entries of $h_t$
+\item Flush the cache
+\end{itemize}
+
+In each time step, we execute the first operation: We go over all non-zero
+entries of $h_t$, we turn each entry $h_{t,i}$ into a tuple $(t,i,h_{t,i})$
+and append it to the cache. This clearly takes $O(\nnz(h_t)) = O(\nnz(g_t))$
+time.
+
+When the cache gets full (e.g. it has more than $d$ tuples), we flush it.
+The end result of flush operation is that we compute $S_{t+1}$ and
+set $\tau = t + 1$, we replace $w_\tau$ with $w_{t+1}$. Finally, at the end
+of the flush operation, the cache will be empty i.e. it will contain no tuples.
+The flush operation will take $O(d)$ time.
+
+There two questions: (a) How to implement the flush operation in $O(d)$ time?
+(b) How to prove that the update from $S_t$ to $S_{t+1}$ takes $O(\nnz(g_t))$
+amortized time?
+
+Let's start with the second question, which is easier. Notice
+that we actually don't compute $S_t$ for all time steps $t=1,2,\dots$.
+We simply produce a sequence $S_{\tau_1}, S_{\tau_2}, S_{\tau_3}, \dots$
+where $\tau_1 < \tau_2 < \tau_3$ is an increasing sequence of time indices
+when the cache flushes occur. Between two consectutive flushes
+$\tau_i$ and $\tau_{i+1}$ the cache accumulated $\Theta(d)$ non-zero entries
+and it took $O(d)$ time to execute the flush. Thus the total
+running time to process all non-zero entries to compute the last most recent
+$S_\tau$ was $O(\sum_{t=1}^\tau \nnz(h_t))$.
+
+Also note that if each $h_t$ has at least one non-zero entry, then flushes
+happen at least every $d$ rounds. Finally, note that cache will contain at most
+$2d-1$ elements; (this can happen e.g. if the cache accumulates $d-1$ elements
+and then we append $d$ elements to it in a single round and then we immediately
+flush it.)
+
+It remains to show how to
+\end{document}
