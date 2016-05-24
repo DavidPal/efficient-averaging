@@ -48,7 +48,7 @@ from $g_t$ and internal state of the algorithm.  Note that gradient descent
 
 To simplify the treatment, let $h_t = \beta_t g_t$. Then
 $$
-w_{t+1} = \alpha_t \sum_{s=1}^t w_t \; .
+w_{t+1} = \alpha_t \sum_{s=1}^t h_t \; .
 $$
 
 This algorithm cannot explicitly compute $w_t$ in $O(\nnz(g_t))$ time.
@@ -61,59 +61,55 @@ where
 $$
 \theta_t = \sum_{s=1}^t h_s \; .
 $$
-We can think of the pair $(\theta_t, \alpha_t)$ is a representation of $w_t$.
+We can think of the pair $(\theta_t, \alpha_t)$ as a representation of $w_{t+1}$.
 Clearly, $\theta_t$ can be computed from $\theta_{t-1}$ and $g_t$ in $\nnz(h_t)
 = \nnz(g_t)$ time.
 
 \section{Updating $S_{t+1}$ in amortized $O(\nnz(g_t))$ time}
 
-We now show how to update $S_{t+1} = \sum_{s=1}^{t+1} w_s$ in amortized
-$O(\nnz(g_t))$.
+We now show how to update $S_{t+1}$ in amortized $O(\nnz(g_t))$. In other
+words, we show how to compute $S_T$ in time $O(\sum_{t=1}^T \nnz(g_t))$ time
+and $O(d)$ memory. The basic idea is to postpone the updates and have a cache of
+size $O(d)$ to store the updates. When the cache gets full, we realize the
+updates.
 
-The basic idea is to postpone the updates and have a cache of size $O(d)$ to
-store the updates of individual coordinates of $h_{s,i}$. When the cache gets
-full, we realize the updates.
+In more detail, we remember $S_\tau$ and $w_\tau$ for some $\tau \le t$.
+We can think of the variables $S_\tau$ and $w_\tau$ as the
+latest versions. The cache contains the vectors $h_\tau, h_{\tau + 1},
+\dots, h_t$ and the coefficients $\alpha_\tau, \alpha_{\tau + 1}, \dots,
+\alpha_t$. The vectors $h_\tau, h_{\tau + 1}, \dots, h_t$ are stored as
+sparse vectors. The cache takes
+$$
+\underbrace{(t - \tau)}_{\text{for storing $\alpha$'s}} + \underbrace{\sum_{s=\tau + 1}^t \nnz(h_s)}_{\text{for storing $h$'s}} \; .
+$$
 
-We remember $S_\tau$ and $w_\tau$ for some $\tau \le t$ and the index $\tau$. We can think of
-the variables $S_\tau$ and $w_\tau$ are the ``latest versions''. The cache is simply
-an array containing tuples $(s,i,h_{s,i},\alpha_s)$ for all non-zero coordinates
-of $h_{s,i}$ for time steps $s > \tau$ that are not yet reflected in $S_\tau$ and $w_\tau$.
-We need support two operations on the cache:
-\begin{itemize}
-\item Append non-zero entries of $h_t$
-\item Flush the cache
-\end{itemize}
+Whenever the space needed for cache exceeds  (some constant multiple of) $d$,
+we compute $S_{t+1}$ and $w_{t+1}$ explicitly and we empty the cache. We now
+show how to compute $S_{t+1}$ and $w_{t+1}$ in $O(d)$ time.
 
-In each time step, we execute the first operation: We go over all non-zero
-entries of $h_t$, we turn each entry $h_{t,i}$ into a tuple $(t,i,h_{t,i})$
-and append it to the cache. This clearly takes $O(\nnz(h_t)) = O(\nnz(g_t))$
-time.
+First note that $t \le \tau + d$, since the cache contains coefficients
+$\alpha_\tau, \alpha_{\tau + 1}, \dots, \alpha_t$ even for zero gradients. Thus, the cache
+reaches capacity $d$ in at most $d$ rounds. We can thus
+explicitly compute partial sums $\gamma_{\tau}, \gamma_{\tau + 1}, \dots, \gamma_t$
+where
+$$
+\gamma_s = \sum_{j=1}^s \alpha_j \; .
+$$
 
-When the cache gets full (e.g. it has more than $d$ tuples), we flush it.
-The end result of flush operation is that we compute $S_{t+1}$ and
-set $\tau = t + 1$, we replace $w_\tau$ with $w_{t+1}$. Finally, at the end
-of the flush operation, the cache will be empty i.e. it will contain no tuples.
-The flush operation will take $O(d)$ time.
+Consider any cordinate $i \in \{1,2,\dots,d\}$. Let $s_1 < s_2 < \dots < s_k$
+be the time indices such that $h_{s_j,i} \neq 0$ for $h_{s_j}$ in the cache.
+We also define $s_0 = \tau - 1$ and $s_{k+1} = t$. (Note that $k=0$ can happen if
+coordinate $i$ didn't receive any updates.) We have
+\begin{align*}
+S_{t+1,i}
+& = S_{\tau,i} + \sum_{s=\tau + 1}^{t+1} w_{s,i} \\
+& = S_{\tau,i} + \sum_{s=\tau}^t \alpha_s \theta_{s,i} \\
+& = S_{\tau,i} + \sum_{j=0}^k \sum_{s=s_j + 1}^{s_{j+1}} \alpha_s \theta_{s,i} \\
+& = S_{\tau,i} + \sum_{j=0}^k \theta_{s_j,i} \sum_{s=s_j + 1}^{s_{j+1}} \alpha_s \\
+& = S_{\tau,i} + \sum_{j=0}^k \theta_{s_j,i} (\gamma_{s_{j+1}} - \gamma_{s_j}) \; .
+\end{align*}
+Clearly, the last sum can be evaluated in $O(k)$ time by computing $\theta_{s_0,i}, \theta_{s_1,i}, \dots, \theta_{s_k,i}$.
+All coordinates of $S_{t+1}$ can be computed in $O(\sum_{i=1}^d k_i) =
+O(\sum_{s=\tau + 1}^t \nnz(h_s)) = O(d)$ time.
 
-There two questions: (a) How to implement the flush operation in $O(d)$ time?
-(b) How to prove that the update from $S_t$ to $S_{t+1}$ takes $O(\nnz(g_t))$
-amortized time?
-
-Let's start with the second question, which is easier. Notice
-that we actually don't compute $S_t$ for all time steps $t=1,2,\dots$.
-We simply produce a sequence $S_{\tau_1}, S_{\tau_2}, S_{\tau_3}, \dots$
-where $\tau_1 < \tau_2 < \tau_3$ is an increasing sequence of time indices
-when the cache flushes occur. Between two consectutive flushes
-$\tau_i$ and $\tau_{i+1}$ the cache accumulated $\Theta(d)$ non-zero entries
-and it took $O(d)$ time to execute the flush. Thus the total
-running time to process all non-zero entries to compute the last most recent
-$S_\tau$ was $O(\sum_{t=1}^\tau \nnz(h_t))$.
-
-Also note that if each $h_t$ has at least one non-zero entry, then flushes
-happen at least every $d$ rounds. Finally, note that cache will contain at most
-$2d-1$ elements; (this can happen e.g. if the cache accumulates $d-1$ elements
-and then we append $d$ elements to it in a single round and then we immediately
-flush it.)
-
-It remains to show how to
 \end{document}
